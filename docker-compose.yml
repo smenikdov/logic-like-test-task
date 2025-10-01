@@ -1,0 +1,37 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    command: sh -c "npm run migrate:up && npm run dev"
+    environment:
+      - DB_HOST=db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_NAME=logiclike_test_task
+      - DB_PORT=5432
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/logiclike_test_task
+      - PORT=3000
+    depends_on:
+      - db
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+  db:
+    image: postgres:14-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=logiclike_test_task
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
