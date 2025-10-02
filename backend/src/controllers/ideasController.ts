@@ -46,55 +46,53 @@ export const getIdeas = async (req: Request, res: Response) => {
 
 export const saveVote = async (req: Request, res: Response) => {
     const funcName = 'saveVote';
+    const client = await pool.connect();
 
     try {
         const ideaId = req.params.id;
         const ip = getIp(req);
-
         if (!ip) {
             logger.info(`${funcName}: IP not found`);
             return res.status(400).json({ error: 'IP not found' });
         }
 
-        const ideaExists = await pool.query('SELECT id FROM ideas WHERE id = $1', [ideaId]);
+        const ideaExists = await client.query('SELECT id FROM ideas WHERE id = $1', [ideaId]);
         if (ideaExists.rowCount === 0) {
             logger.info(`${funcName}: idea not found: ${ideaId}, IP: ${ip}`);
-            res.status(404).json({ error: 'Idea not found' });
-            return;
+            return res.status(404).json({ error: 'Idea not found' });
         }
 
-        const voteCountResult = await pool.query('SELECT COUNT(*) FROM votes WHERE "ipAddress" = $1', [ip]);
+        const voteCountResult = await client.query('SELECT COUNT(*) FROM votes WHERE "ipAddress" = $1', [ip]);
         const voteCount = voteCountResult.rows[0].count;
-
         if (voteCount >= VOTES_LIMIT) {
             logger.info(`${funcName}: vote limit exceeded for IP: ${ip}, count: ${voteCount}`);
-            return res.status(409).json({ error: `Vote limit exceeded (max ${ VOTES_LIMIT })` });
+            return res.status(409).json({ error: `Vote limit exceeded (max ${VOTES_LIMIT})` });
         }
 
-        const existingVote = await pool.query(
+        const existingVote = await client.query(
             'SELECT id FROM votes WHERE "ideaId" = $1 AND "ipAddress" = $2',
-            [ideaId, ip],
+            [ideaId, ip]
         );
-
         if (existingVote.rows.length > 0) {
             logger.info(`${funcName}: already voted for this idea, IP: ${ip}, ideaId: ${ideaId}`);
             return res.status(409).json({ error: 'Already voted for this idea' });
         }
 
-        await pool.query('BEGIN');
+        await client.query('BEGIN');
         try {
-            await pool.query('INSERT INTO votes ("ideaId", "ipAddress") VALUES ($1, $2)', [ideaId, ip]);
-            await pool.query('UPDATE ideas SET "votesCount" = "votesCount" + 1 WHERE id = $1', [ideaId]);
-            await pool.query('COMMIT');
+            await client.query('INSERT INTO votes ("ideaId", "ipAddress") VALUES ($1, $2)', [ideaId, ip]);
+            await client.query('UPDATE ideas SET "votesCount" = "votesCount" + 1 WHERE id = $1', [ideaId]);
+            await client.query('COMMIT');
         } catch (error) {
-            await pool.query('ROLLBACK');
+            await client.query('ROLLBACK');
             throw error;
         }
 
         res.status(200).json({ message: 'success' });
-    }
-    catch (error) {
+    } catch (error) {
         handleError({ funcName, error });
         res.status(400).json({ error: 'error' });
+    } finally {
+        client.release();
     }
 };
